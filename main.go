@@ -30,11 +30,26 @@ import (
 	"time"
 )
 
-var flRepo = flag.String("repo", envString("GIT_SYNC_REPO", ""), "git repo url")
+var flRepo = flag.String("repo", envString("GIT_SYNC_REPO", "https://github.com/rubico259/NonBlockingProducerConsumer.git"), "git repo url")
 var flBranch = flag.String("branch", envString("GIT_SYNC_BRANCH", "master"), "git branch")
 var flRev = flag.String("rev", envString("GIT_SYNC_REV", "HEAD"), "git rev")
-var flDest = flag.String("dest", envString("GIT_SYNC_DEST", ""), "destination path")
+var flDest = flag.String("dest", envString("GIT_SYNC_DEST", "gs"), "destination path")
 var flWait = flag.Int("wait", envInt("GIT_SYNC_WAIT", 0), "number of seconds to wait before exit")
+var flOneTime = flag.Bool("one-time", envBool("GIT_SYNC_ONE_TIME", false), "exit after the first sync")
+var flUser = flag.String("user", envString("GIT_SYNC_USER", "rubico259"), "git user auth")
+var flPassword = flag.String("password", envString("GIT_SYNC_PASSWORD", "Rubico2491!"), "git password auth")
+
+func envBool(key string, def bool) bool {
+	if env := os.Getenv(key); env != "" {
+		res, err := strconv.ParseBool(env)
+		if err != nil {
+			return def
+		}
+
+		return res
+	}
+	return def
+}
 
 func envString(key, def string) string {
 	if env := os.Getenv(key); env != "" {
@@ -76,14 +91,20 @@ func main() {
 	}
 }
 
+func buildGitUrl(repo, user, password string) string {
+	return "https://" + user + ":" + password + "@" + strings.Replace(repo, "https://", "", -1)
+}
+
 // syncRepo syncs the branch of a given repository to the destination at the given rev.
 func syncRepo(repo, dest, branch, rev string) error {
 	gitRepoPath := path.Join(dest, ".git")
 	_, err := os.Stat(gitRepoPath)
 	switch {
 	case os.IsNotExist(err):
+
+		httpsRepo := buildGitUrl(repo, *flUser, *flPassword)
 		// clone repo
-		cmd := exec.Command("git", "clone", "--no-checkout", "-b", branch, repo, dest)
+		cmd := exec.Command("git", "clone", "--no-checkout", "-b", branch, httpsRepo, dest)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("error cloning repo %q: %v: %s", strings.Join(cmd.Args, " "), err, string(output))
@@ -110,14 +131,6 @@ func syncRepo(repo, dest, branch, rev string) error {
 		return fmt.Errorf("error running command %q : %v: %s", strings.Join(cmd.Args, " "), err, string(output))
 	}
 	log.Printf("reset %q: %v", rev, string(output))
-
-	// set file permissions
-	cmd = exec.Command("chmod", "-R", "755", dest)
-	cmd.Dir = dest
-	output, err = cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("error running command %q : %v: %s", strings.Join(cmd.Args, " "), err, string(output))
-	}
 
 	return nil
 }
